@@ -441,6 +441,10 @@
                         <div class="legend-dot" style="background:#22c55e;opacity:.6;width:14px;height:14px;border-radius:3px;"></div>
                         <span>Uncertainty circle (green = sending)</span>
                     </div>
+                    <div class="legend-item">
+                        <div style="width:20px;height:3px;border-radius:1px;background:linear-gradient(to right,rgba(59,130,246,0.15),#3b82f6);flex-shrink:0;align-self:center;"></div>
+                        <span>60s position trail</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -490,6 +494,12 @@ const state = {
 // ── Map globals ─────────────────────────────────────────
 let map, starlinkMarker, starlinkCircle, aircraftMarker;
 
+// ── Breadcrumb trail ─────────────────────────────────────
+const TRAIL_DURATION_MS = 60000;
+const TRAIL_SEGMENTS    = 4;
+const trailHistory      = []; // { latlng: [lat, lon], ts: number }
+let   trailPolylines    = [];
+
 // ── Map init ─────────────────────────────────────────────
 function initMap() {
     map = L.map('map', {
@@ -504,6 +514,46 @@ function initMap() {
     }).addTo(map);
 }
 
+// ── Trail update ─────────────────────────────────────────
+function updateTrail(latlng) {
+    const now = Date.now();
+    trailHistory.push({ latlng, ts: now });
+
+    // Prune entries older than 60s
+    while (trailHistory.length > 1 && trailHistory[0].ts < now - TRAIL_DURATION_MS) {
+        trailHistory.shift();
+    }
+
+    // Remove previous trail polylines
+    trailPolylines.forEach(p => map.removeLayer(p));
+    trailPolylines = [];
+
+    if (trailHistory.length < 2) return;
+
+    // Split history into TRAIL_SEGMENTS chunks; older = more transparent
+    const opacities = [0.1, 0.25, 0.5, 0.8]; // oldest → newest
+    const count = trailHistory.length;
+    const chunkSize = Math.ceil(count / TRAIL_SEGMENTS);
+
+    for (let i = 0; i < TRAIL_SEGMENTS; i++) {
+        const start = i * chunkSize;
+        // Overlap by 1 so segment lines connect seamlessly
+        const end = Math.min(start + chunkSize + 1, count);
+        if (start >= count - 1) break;
+
+        const points = trailHistory.slice(start, end).map(e => e.latlng);
+        if (points.length < 2) continue;
+
+        const poly = L.polyline(points, {
+            color: '#3b82f6',
+            weight: 2,
+            opacity: opacities[i] ?? 0.5,
+            interactive: false,
+        }).addTo(map);
+        trailPolylines.push(poly);
+    }
+}
+
 // ── Map update ───────────────────────────────────────────
 function updateMap(pos) {
     if (!pos) return;
@@ -512,6 +562,7 @@ function updateMap(pos) {
     if (!sl || sl.lat === null || sl.lon === null) return;
 
     const latlng = [sl.lat, sl.lon];
+    updateTrail(latlng);
     const sending = !!pos.sending;
     const unc99 = (sl.uncertainty_99 !== null && sl.uncertainty_99 !== undefined)
         ? sl.uncertainty_99 : 20;
@@ -579,6 +630,11 @@ function updateMap(pos) {
             aircraftMarker.setLatLng(gpsLatLng);
         }
     }
+
+    // Keep markers rendered above the trail polylines
+    if (starlinkCircle) starlinkCircle.bringToFront();
+    if (starlinkMarker) starlinkMarker.bringToFront();
+    if (aircraftMarker) aircraftMarker.bringToFront();
 }
 
 // ── Status fetch ─────────────────────────────────────────
