@@ -180,13 +180,12 @@ ref_alt = float(origin.lla.alt)
 
 print(f"Setting origin to Starlink: {ref_lat}, {ref_lon}, {ref_alt}")
 
-mav.mav.command_int_send(
-    TARGET_SYS, TARGET_COMP,
-    0, 179,                         # MAV_CMD_DO_SET_GPS_GLOBAL_ORIGIN
-    0, 0,
-    0,
-    0, 0, 0,
-    int(ref_lat * 1e7), int(ref_lon * 1e7), ref_alt
+mav.mav.set_gps_global_origin_send(
+    TARGET_SYS,
+    int(ref_lat * 1e7),             # latitude (degE7)
+    int(ref_lon * 1e7),             # longitude (degE7)
+    int(ref_alt * 1000),            # altitude (mm, MSL)
+    int(time.time() * 1e6)          # time_usec
 )
 
 print("Origin set.")
