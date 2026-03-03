@@ -143,7 +143,39 @@ def distance_3d(lat1, lon1, alt1, lat2, lon2, alt2):
 # -------------------------
 # Web UI status file
 # -------------------------
-STATUS_FILE = "/tmp/starnav_status.json"
+STATUS_FILE          = "/tmp/starnav_status.json"
+FAKEGPS_TRIGGER_FILE = "/tmp/starnav_fakegps_trigger"
+
+# GPS epoch constants (for GPS_INPUT time fields)
+_GPS_EPOCH_UNIX = 315964800   # 1980-01-06 00:00:00 UTC as Unix timestamp
+_GPS_SECS_PER_WEEK = 604800
+
+def send_fake_gps(lat, lon, alt):
+    """Send a single GPS_INPUT message with a fake 3D fix to GPS2 (gps_id=1)."""
+    gps_secs   = time.time() - _GPS_EPOCH_UNIX
+    week       = int(gps_secs / _GPS_SECS_PER_WEEK)
+    ms_in_week = int((gps_secs % _GPS_SECS_PER_WEEK) * 1000)
+    # ignore_flags: ignore velocity (8|16) and speed accuracy (32)
+    mav.mav.gps_input_send(
+        int(time.time() * 1e6),  # time_usec
+        1,                        # gps_id  (GPS2 = index 1)
+        56,                       # ignore_flags
+        ms_in_week,               # time_week_ms
+        week,                     # time_week
+        3,                        # fix_type  (3 = 3D fix)
+        int(lat * 1e7),           # lat  degE7
+        int(lon * 1e7),           # lon  degE7
+        float(alt),               # alt  metres MSL
+        6.9,                      # hdop
+        6.9,                      # vdop
+        0.0, 0.0, 0.0,            # vn, ve, vd  (ignored)
+        0.0,                      # speed_accuracy (ignored)
+        6.9,                      # horiz_accuracy  m
+        9.0,                      # vert_accuracy   m
+        20,                       # satellites_visible
+        0,                        # yaw  (0 = not set)
+    )
+
 
 def write_status_file(data):
     """Atomically write current position/state to JSON for the web UI."""
@@ -181,11 +213,12 @@ def write_status_file(data):
             "pitch": sf(data["pitch"], 2),
             "yaw":   sf(data["yaw"],   2),
         },
-        "accuracy_3d":    sf(data["accuracy"], 3),
-        "sending":        data["sending"],
-        "correction":     data["correction"],
-        "stable_seconds": sf(data["stable_secs"], 1),
+        "accuracy_3d":     sf(data["accuracy"], 3),
+        "sending":         data["sending"],
+        "correction":      data["correction"],
+        "stable_seconds":  sf(data["stable_secs"], 1),
         "last_ack_result": data["last_ack_result"],
+        "fake_gps_active": data["fake_gps_active"],
     }
     try:
         tmp = STATUS_FILE + ".tmp"
@@ -317,6 +350,7 @@ try:
     correction = "N"
     timestamp = datetime.now(UTC)
     last_ack_result = None   # None = never sent; 0 = accepted; other = rejected
+    fake_gps_until  = None   # monotonic time when fake GPS burst should stop
 
     while True:
         try:
@@ -457,6 +491,23 @@ try:
             else:
                 print("No COMMAND_ACK received.")
 
+        # ---- Fake GPS trigger ----
+        if os.path.exists(FAKEGPS_TRIGGER_FILE):
+            try:
+                os.remove(FAKEGPS_TRIGGER_FILE)
+            except OSError:
+                pass
+            fake_gps_until = now_monotonic + 5.0
+            print(">>> Fake GPS burst started (5 s @ 5 Hz on GPS2) <<<")
+
+        if fake_gps_until is not None:
+            if now_monotonic < fake_gps_until:
+                if not (math.isnan(star_lat) or math.isnan(star_lon) or math.isnan(star_alt)):
+                    send_fake_gps(star_lat, star_lon, star_alt)
+            else:
+                fake_gps_until = None
+                print(">>> Fake GPS burst ended <<<")
+
         # Write status file for web UI (every iteration, ~5 Hz)
         _stable_secs = None
         if unc_below_threshold_start is not None:
@@ -477,6 +528,7 @@ try:
             "correction":     correction,
             "stable_secs":    _stable_secs,
             "last_ack_result": last_ack_result,
+            "fake_gps_active": fake_gps_until is not None,
         })
 
         time.sleep(0.2)

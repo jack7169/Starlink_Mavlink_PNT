@@ -292,9 +292,10 @@
             </div>
         </div>
         <div class="header-actions">
-            <button id="btn-start"   class="btn btn-primary"   onclick="executeCommand('start')">Start</button>
-            <button id="btn-stop"    class="btn btn-danger"    onclick="executeCommand('stop')">Stop</button>
-            <button id="btn-restart" class="btn btn-secondary" onclick="executeCommand('restart')">Restart</button>
+            <button id="btn-start"    class="btn btn-primary"   onclick="executeCommand('start')">Start</button>
+            <button id="btn-stop"     class="btn btn-danger"    onclick="executeCommand('stop')">Stop</button>
+            <button id="btn-restart"  class="btn btn-secondary" onclick="executeCommand('restart')">Restart</button>
+            <button id="btn-fakegps"  class="btn btn-warn"      onclick="enableFakeGPS()">Fake GPS (5s)</button>
         </div>
     </div>
 </header>
@@ -754,6 +755,17 @@ function updateStatusUI(data) {
     const corr = p.correction || 'N';
     setText('correction', corr, corr === 'Y' ? 'val-send' : 'val-muted');
 
+    // Fake GPS active indicator
+    const fakeBtn = document.getElementById('btn-fakegps');
+    if (fakeBtn && p.fake_gps_active && !_fakeGpsTimer) {
+        // Burst active server-side but no client countdown running (e.g. page refresh)
+        fakeBtn.disabled = true;
+        fakeBtn.textContent = 'Fake GPS (active)';
+    } else if (fakeBtn && !p.fake_gps_active && !_fakeGpsTimer) {
+        fakeBtn.disabled = false;
+        fakeBtn.textContent = 'Fake GPS (5s)';
+    }
+
     // EKF acceptance (last ACK result)
     const ack = p.last_ack_result;
     if (ack === null || ack === undefined) {
@@ -860,6 +872,50 @@ function togglePause() {
 
 function clearLogs() {
     document.getElementById('logOutput').innerHTML = '';
+}
+
+// ── Fake GPS burst ───────────────────────────────────────
+let _fakeGpsTimer = null;
+
+async function enableFakeGPS() {
+    const btn = document.getElementById('btn-fakegps');
+    if (!btn || btn.disabled) return;
+
+    try {
+        const resp = await fetch(CFG.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'fake_gps' }),
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            appendLog({ level: 'error', source: 'webui', message: 'Fake GPS trigger failed: ' + (data.error || '') });
+            return;
+        }
+    } catch (e) {
+        appendLog({ level: 'error', source: 'webui', message: 'Fake GPS trigger failed: ' + e.message });
+        return;
+    }
+
+    appendLog({ level: 'send', source: 'webui', message: 'Fake GPS burst triggered — 5 s @ 5 Hz on GPS2' });
+
+    // Countdown on the button
+    btn.disabled = true;
+    let remaining = 5;
+    btn.textContent = `Fake GPS (${remaining}s)`;
+    clearInterval(_fakeGpsTimer);
+    _fakeGpsTimer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+            btn.textContent = `Fake GPS (${remaining}s)`;
+        } else {
+            clearInterval(_fakeGpsTimer);
+            _fakeGpsTimer = null;
+            btn.disabled = false;
+            btn.textContent = 'Fake GPS (5s)';
+            appendLog({ level: 'info', source: 'webui', message: 'Fake GPS burst complete' });
+        }
+    }, 1000);
 }
 
 // ── Command execution ────────────────────────────────────

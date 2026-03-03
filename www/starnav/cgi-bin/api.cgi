@@ -105,7 +105,11 @@ case "$action" in
     status)
         run_starnav_command "status"
         ;;
+    fake_gps)
+        touch /tmp/starnav_fakegps_trigger 2>/dev/null
+        json_response "{\"success\": true, \"action\": \"fake_gps\"}"
+        ;;
     *)
-        json_error "Unknown action: $action (valid: start, stop, restart, status)"
+        json_error "Unknown action: $action (valid: start, stop, restart, status, fake_gps)"
         ;;
 esac
