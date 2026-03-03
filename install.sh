@@ -92,7 +92,7 @@ chmod +x "$INIT_SCRIPT"
 "$INIT_SCRIPT" enable
 echo "Service enabled for auto-start on boot."
 
-# ---- Section 6: Web UI ----
+# ---- Section 6: Web UI files ----
 echo ""
 echo "=== Installing web UI ==="
 WEB_DIR="/www/starnav"
@@ -104,8 +104,29 @@ cp "${SCRIPT_DIR}/www/starnav/cgi-bin/logs.cgi"   "${WEB_DIR}/cgi-bin/"
 cp "${SCRIPT_DIR}/www/starnav/cgi-bin/api.cgi"    "${WEB_DIR}/cgi-bin/"
 chmod +x "${WEB_DIR}/cgi-bin/"*.cgi
 
-echo "Web UI installed to $WEB_DIR"
-echo "Access at: http://192.168.1.1/starnav/"
+echo "Web UI files installed to $WEB_DIR"
+
+# ---- Section 7: Dedicated uhttpd instance on port 8081 ----
+echo ""
+echo "=== Configuring dedicated web server (port 8081) ==="
+
+# Add/update a separate uhttpd UCI config block named 'starnav'.
+# This runs alongside the existing uhttpd instance and owns only port 8081.
+uci set uhttpd.starnav=uhttpd
+uci set uhttpd.starnav.home='/www/starnav'
+uci set uhttpd.starnav.cgi_prefix='/cgi-bin'
+uci set uhttpd.starnav.script_timeout='60'
+uci set uhttpd.starnav.network_timeout='30'
+uci set uhttpd.starnav.max_requests='5'
+uci set uhttpd.starnav.tcp_keepalive='1'
+# Clear any existing listen list before (re-)adding to stay idempotent
+uci -q delete uhttpd.starnav.listen_http || true
+uci add_list uhttpd.starnav.listen_http='0.0.0.0:8081'
+uci add_list uhttpd.starnav.listen_http='[::]:8081'
+uci commit uhttpd
+
+/etc/init.d/uhttpd restart
+echo "uhttpd restarted — StarNav UI now on port 8081."
 
 # ---- Done ----
 echo ""
@@ -114,10 +135,10 @@ echo ""
 echo "  Config file:  $CONFIG_FILE"
 echo "  Install dir:  $INSTALL_DIR"
 echo "  Init script:  $INIT_SCRIPT"
-echo "  Web UI:       http://192.168.1.1/starnav/"
+echo "  Web UI:       http://<router-ip>:8081/"
 echo ""
 echo "  1. Edit $CONFIG_FILE to set your MAVLink endpoint"
 echo "  2. Start:   /etc/init.d/starnav start"
-echo "  3. Web UI:  http://192.168.1.1/starnav/"
+echo "  3. Web UI:  http://<router-ip>:8081/"
 echo "  4. Logs:    logread -e starnav"
 echo "  5. Stop:    /etc/init.d/starnav stop"
