@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 import signal
+import json
 
 # -------------------------
 # Argument Parsing
@@ -140,6 +141,60 @@ def distance_3d(lat1, lon1, alt1, lat2, lon2, alt2):
     )
 
 # -------------------------
+# Web UI status file
+# -------------------------
+STATUS_FILE = "/tmp/starnav_status.json"
+
+def write_status_file(data):
+    """Atomically write current position/state to JSON for the web UI."""
+    def sf(v, d=7):
+        """Convert float to rounded value, or None if NaN/Inf."""
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return None
+        return round(v, d) if isinstance(v, float) else v
+
+    obj = {
+        "timestamp": data["ts"].strftime("%Y-%m-%dT%H:%M:%S.") + data["ts"].strftime("%f")[:3],
+        "dish_address": DISH_ADDRESS,
+        "mavlink_connection": MAVLINK_CONNECTION,
+        "uncertainty_limit": UNCERTAINTY_LIMIT,
+        "min_stable_time": MIN_STABLE_TIME,
+        "starlink": {
+            "lat": sf(data["star_lat"]),
+            "lon": sf(data["star_lon"]),
+            "alt": sf(data["star_alt"], 2),
+            "uncertainty_1sigma": sf(data["star_unc_1sigma"], 3),
+            "uncertainty_99": sf(data["star_unc_99"], 3),
+        },
+        "gps": {
+            "lat": sf(data["gps_lat"]),
+            "lon": sf(data["gps_lon"]),
+            "alt": sf(data["gps_alt"], 2),
+        },
+        "ekf": {
+            "lat": sf(data["ekf_lat"]),
+            "lon": sf(data["ekf_lon"]),
+            "alt": sf(data["ekf_alt"], 2),
+        },
+        "attitude": {
+            "roll":  sf(data["roll"],  2),
+            "pitch": sf(data["pitch"], 2),
+            "yaw":   sf(data["yaw"],   2),
+        },
+        "accuracy_3d":    sf(data["accuracy"], 3),
+        "sending":        data["sending"],
+        "correction":     data["correction"],
+        "stable_seconds": sf(data["stable_secs"], 1),
+    }
+    try:
+        tmp = STATUS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(obj, f)
+        os.replace(tmp, STATUS_FILE)
+    except OSError:
+        pass
+
+# -------------------------
 # Starlink gRPC connection
 # -------------------------
 starlink_context = starlink_grpc.ChannelContext(target=DISH_ADDRESS)
@@ -253,6 +308,13 @@ try:
     gps_lat = gps_lon = gps_alt = float("nan")
     ekf_lat = ekf_lon = ekf_alt = float("nan")
     roll = pitch = yaw = float("nan")
+
+    # Persistent state for Starlink and derived values (fallback when inner try fails)
+    star_lat = star_lon = star_alt = float("nan")
+    star_unc_1sigma = star_unc_99 = float("nan")
+    accuracy = float("nan")
+    correction = "N"
+    timestamp = datetime.now(UTC)
 
     while True:
         try:
@@ -391,6 +453,27 @@ try:
                 )
             else:
                 print("No COMMAND_ACK received.")
+
+        # Write status file for web UI (every iteration, ~5 Hz)
+        _stable_secs = None
+        if unc_below_threshold_start is not None:
+            _stable_secs = now_monotonic - unc_below_threshold_start
+        write_status_file({
+            "ts":             timestamp,
+            "star_lat":       star_lat,       "star_lon":       star_lon,
+            "star_alt":       star_alt,
+            "star_unc_1sigma": star_unc_1sigma, "star_unc_99":   star_unc_99,
+            "gps_lat":        gps_lat,         "gps_lon":       gps_lon,
+            "gps_alt":        gps_alt,
+            "ekf_lat":        ekf_lat,         "ekf_lon":       ekf_lon,
+            "ekf_alt":        ekf_alt,
+            "roll":           roll,             "pitch":         pitch,
+            "yaw":            yaw,
+            "accuracy":       accuracy,
+            "sending":        (correction == "Y" or stable_long_enough),
+            "correction":     correction,
+            "stable_secs":    _stable_secs,
+        })
 
         time.sleep(0.2)
 finally:

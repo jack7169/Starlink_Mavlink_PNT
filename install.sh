@@ -92,6 +92,21 @@ chmod +x "$INIT_SCRIPT"
 "$INIT_SCRIPT" enable
 echo "Service enabled for auto-start on boot."
 
+# ---- Section 6: Web UI ----
+echo ""
+echo "=== Installing web UI ==="
+WEB_DIR="/www/starnav"
+mkdir -p "${WEB_DIR}/cgi-bin"
+
+cp "${SCRIPT_DIR}/www/starnav/index.html" "${WEB_DIR}/"
+cp "${SCRIPT_DIR}/www/starnav/cgi-bin/status.cgi" "${WEB_DIR}/cgi-bin/"
+cp "${SCRIPT_DIR}/www/starnav/cgi-bin/logs.cgi"   "${WEB_DIR}/cgi-bin/"
+cp "${SCRIPT_DIR}/www/starnav/cgi-bin/api.cgi"    "${WEB_DIR}/cgi-bin/"
+chmod +x "${WEB_DIR}/cgi-bin/"*.cgi
+
+echo "Web UI installed to $WEB_DIR"
+echo "Access at: http://192.168.1.1/starnav/"
+
 # ---- Done ----
 echo ""
 echo "=== Installation complete ==="
@@ -99,8 +114,10 @@ echo ""
 echo "  Config file:  $CONFIG_FILE"
 echo "  Install dir:  $INSTALL_DIR"
 echo "  Init script:  $INIT_SCRIPT"
+echo "  Web UI:       http://192.168.1.1/starnav/"
 echo ""
 echo "  1. Edit $CONFIG_FILE to set your MAVLink endpoint"
 echo "  2. Start:   /etc/init.d/starnav start"
-echo "  3. Logs:    logread -e starnav"
-echo "  4. Stop:    /etc/init.d/starnav stop"
+echo "  3. Web UI:  http://192.168.1.1/starnav/"
+echo "  4. Logs:    logread -e starnav"
+echo "  5. Stop:    /etc/init.d/starnav stop"

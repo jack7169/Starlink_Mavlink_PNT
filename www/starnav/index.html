@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarNav Monitor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <style>
+        :root {
+            --bg-primary:   #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card:      #1f2940;
+            --text-primary: #e4e4e7;
+            --text-secondary: #a1a1aa;
+            --accent:       #3b82f6;
+            --accent-hover: #2563eb;
+            --success:      #22c55e;
+            --warning:      #f59e0b;
+            --error:        #ef4444;
+            --send:         #a78bfa;
+            --border:       #374151;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                         'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* ── Header ─────────────────────────────────── */
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1rem;
+            position: sticky;
+            top: 0;
+            z-index: 200;
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo h1 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .logo .subtitle {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .status-dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: var(--error);
+            flex-shrink: 0;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.active { background: var(--success); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.45; }
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* ── Buttons ─────────────────────────────────── */
+        .btn {
+            padding: 0.4rem 0.9rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.825rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s, opacity 0.15s;
+        }
+
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .btn-primary   { background: var(--accent);   color: #fff; }
+        .btn-primary:hover:not(:disabled)  { background: var(--accent-hover); }
+        .btn-danger    { background: var(--error);    color: #fff; }
+        .btn-danger:hover:not(:disabled)   { background: #dc2626; }
+        .btn-warn      { background: var(--warning);  color: #1a1a2e; }
+        .btn-warn:hover:not(:disabled)     { background: #d97706; }
+        .btn-secondary { background: #374151; color: var(--text-primary); }
+        .btn-secondary:hover:not(:disabled){ background: #4b5563; }
+
+        /* ── Layout ──────────────────────────────────── */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 1rem;
+            align-items: start;
+        }
+
+        @media (max-width: 900px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        .status-col {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        /* ── Cards ───────────────────────────────────── */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+        }
+
+        .card-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-title .badge {
+            font-size: 0.65rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 10px;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+
+        .badge-live    { background: rgba(34,197,94,.15); color: var(--success); }
+        .badge-sending { background: rgba(167,139,250,.15); color: var(--send); }
+
+        /* ── Status rows ─────────────────────────────── */
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.3rem 0;
+            border-bottom: 1px solid rgba(55,65,81,.5);
+            font-size: 0.85rem;
+        }
+
+        .stat-row:last-child { border-bottom: none; }
+
+        .stat-label { color: var(--text-secondary); }
+
+        .stat-value {
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .val-ok      { color: var(--success); }
+        .val-warn    { color: var(--warning); }
+        .val-error   { color: var(--error); }
+        .val-send    { color: var(--send); }
+        .val-muted   { color: var(--text-secondary); }
+
+        /* ── Map ─────────────────────────────────────── */
+        .map-card { padding: 0; overflow: hidden; }
+
+        .map-header {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .map-header .card-title { margin-bottom: 0; }
+
+        #map {
+            height: 460px;
+            width: 100%;
+            background: #0e1626;
+        }
+
+        .map-legend {
+            padding: 0.6rem 1rem;
+            display: flex;
+            gap: 1.25rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* ── Log Panel ───────────────────────────────── */
+        .log-card { padding: 0; }
+
+        .log-header {
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .log-header .card-title { margin-bottom: 0; }
+
+        .log-controls { display: flex; gap: 0.5rem; }
+
+        #logOutput {
+            height: 260px;
+            overflow-y: auto;
+            padding: 0.5rem 0.75rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.78rem;
+            line-height: 1.55;
+            background: #0d1117;
+        }
+
+        .log-line { white-space: pre-wrap; word-break: break-all; }
+
+        .log-info  { color: #c9d1d9; }
+        .log-warn  { color: var(--warning); }
+        .log-error { color: var(--error); }
+        .log-debug { color: #6e7681; }
+        .log-send  { color: var(--send); font-weight: 600; }
+        .log-ack   { color: var(--success); }
+        .log-sys   { color: var(--accent); }
+
+        /* ── Scrollbar ───────────────────────────────── */
+        ::-webkit-scrollbar       { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<header>
+    <div class="header-content">
+        <div class="logo">
+            <div id="statusDot" class="status-dot"></div>
+            <div>
+                <h1>StarNav Monitor</h1>
+                <div class="subtitle">Starlink → MAVLink Position Forwarding</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button id="btn-start"   class="btn btn-primary"   onclick="executeCommand('start')">Start</button>
+            <button id="btn-stop"    class="btn btn-danger"    onclick="executeCommand('stop')">Stop</button>
+            <button id="btn-restart" class="btn btn-secondary" onclick="executeCommand('restart')">Restart</button>
+        </div>
+    </div>
+</header>
+
+<!-- ── Main Container ──────────────────────────────────── -->
+<div class="container">
+    <div class="main-grid">
+
+        <!-- ── Status Column ─────────────────────────── -->
+        <div class="status-col">
+
+            <!-- Process Status -->
+            <div class="card">
+                <div class="card-title">Process</div>
+                <div class="stat-row">
+                    <span class="stat-label">starnav</span>
+                    <span id="procStatus" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">PID</span>
+                    <span id="procPid" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Last data</span>
+                    <span id="dataAge" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Dish address</span>
+                    <span id="dishAddr" class="stat-value val-muted" style="font-size:0.78rem">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">MAVLink</span>
+                    <span id="mavConn" class="stat-value val-muted" style="font-size:0.78rem">--</span>
+                </div>
+            </div>
+
+            <!-- Starlink Position (what gets sent to autopilot) -->
+            <div class="card">
+                <div class="card-title">
+                    Starlink Position
+                    <span id="sendingBadge" class="badge" style="display:none"></span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Latitude</span>
+                    <span id="starLat" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Longitude</span>
+                    <span id="starLon" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Altitude</span>
+                    <span id="starAlt" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Uncertainty 1σ</span>
+                    <span id="starUnc1" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Uncertainty 99%</span>
+                    <span id="starUnc99" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Stable time</span>
+                    <span id="stableTime" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Sending to autopilot</span>
+                    <span id="sendingStatus" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Correction flag</span>
+                    <span id="correction" class="stat-value val-muted">--</span>
+                </div>
+            </div>
+
+            <!-- Aircraft Data (from MAVLink) -->
+            <div class="card">
+                <div class="card-title">Aircraft (via MAVLink)</div>
+                <div class="stat-row">
+                    <span class="stat-label">GPS lat</span>
+                    <span id="gpsLat" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">GPS lon</span>
+                    <span id="gpsLon" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">GPS alt</span>
+                    <span id="gpsAlt" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">EKF lat</span>
+                    <span id="ekfLat" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">EKF lon</span>
+                    <span id="ekfLon" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">EKF alt</span>
+                    <span id="ekfAlt" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Roll</span>
+                    <span id="roll" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Pitch</span>
+                    <span id="pitch" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Yaw</span>
+                    <span id="yaw" class="stat-value val-muted">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">3D position error</span>
+                    <span id="accuracy3d" class="stat-value val-muted">--</span>
+                </div>
+            </div>
+
+        </div><!-- /status-col -->
+
+        <!-- ── Map Column ─────────────────────────────── -->
+        <div>
+            <div class="card map-card">
+                <div class="map-header">
+                    <div class="card-title">
+                        Satellite Map
+                        <span class="badge badge-live">LIVE</span>
+                    </div>
+                </div>
+                <div id="map"></div>
+                <div class="map-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#3b82f6;"></div>
+                        <span>Starlink position (sent to autopilot)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#f59e0b;border-radius:2px;"></div>
+                        <span>Aircraft GPS</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#22c55e;opacity:.6;width:14px;height:14px;border-radius:3px;"></div>
+                        <span>Uncertainty circle (green = sending)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /main-grid -->
+
+    <!-- ── Log Panel ─────────────────────────────────── -->
+    <div class="card log-card">
+        <div class="log-header">
+            <div class="card-title">
+                Debug Log
+                <span class="badge badge-live">LIVE</span>
+            </div>
+            <div class="log-controls">
+                <button id="pauseBtn" class="btn btn-secondary" onclick="togglePause()">Pause</button>
+                <button class="btn btn-secondary" onclick="clearLogs()">Clear</button>
+            </div>
+        </div>
+        <div id="logOutput"></div>
+    </div>
+
+</div><!-- /container -->
+
+<!-- ── Leaflet ────────────────────────────────────────── -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqnA=" crossorigin=""></script>
+
+<script>
+'use strict';
+
+// ── Config ──────────────────────────────────────────────
+const CFG = {
+    statusUrl:      'cgi-bin/status.cgi',
+    logsUrl:        'cgi-bin/logs.cgi',
+    apiUrl:         'cgi-bin/api.cgi',
+    statusInterval: 2000,
+    maxLogLines:    500,
+};
+
+// ── State ───────────────────────────────────────────────
+const state = {
+    eventSource:  null,
+    logsPaused:   false,
+    hasPosition:  false,
+    lastStatus:   null,
+};
+
+// ── Map globals ─────────────────────────────────────────
+let map, starlinkMarker, starlinkCircle, aircraftMarker;
+
+// ── Map init ─────────────────────────────────────────────
+function initMap() {
+    map = L.map('map', {
+        zoomControl: true,
+        attributionControl: true,
+    }).setView([20, 0], 2);
+
+    // Dark tile layer (CartoDB DarkMatter)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 20,
+    }).addTo(map);
+}
+
+// ── Map update ───────────────────────────────────────────
+function updateMap(pos) {
+    if (!pos) return;
+
+    const sl = pos.starlink;
+    if (!sl || sl.lat === null || sl.lon === null) return;
+
+    const latlng = [sl.lat, sl.lon];
+    const sending = !!pos.sending;
+    const unc99 = (sl.uncertainty_99 !== null && sl.uncertainty_99 !== undefined)
+        ? sl.uncertainty_99 : 20;
+
+    // Circle colour: green = sending, amber = below limit but not stable, red = above limit
+    const uncLimit = pos.uncertainty_limit || 20;
+    let circleColor;
+    if (sending) {
+        circleColor = '#22c55e';
+    } else if (unc99 < uncLimit) {
+        circleColor = '#f59e0b';
+    } else {
+        circleColor = '#ef4444';
+    }
+
+    // Starlink circle (uncertainty radius)
+    if (!starlinkCircle) {
+        starlinkCircle = L.circle(latlng, {
+            radius: unc99,
+            color: circleColor,
+            fillColor: circleColor,
+            fillOpacity: 0.15,
+            weight: 2,
+        }).addTo(map);
+    } else {
+        starlinkCircle.setLatLng(latlng);
+        starlinkCircle.setRadius(unc99);
+        starlinkCircle.setStyle({ color: circleColor, fillColor: circleColor });
+    }
+
+    // Starlink position marker (blue dot)
+    if (!starlinkMarker) {
+        starlinkMarker = L.circleMarker(latlng, {
+            color: '#1d4ed8',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.9,
+            radius: 8,
+            weight: 2,
+        }).addTo(map)
+          .bindTooltip('Starlink dish position (sent to autopilot)', { sticky: false });
+
+        // Auto-pan to first fix
+        if (!state.hasPosition) {
+            map.setView(latlng, 14);
+            state.hasPosition = true;
+        }
+    } else {
+        starlinkMarker.setLatLng(latlng);
+    }
+
+    // Aircraft GPS marker (orange square/diamond)
+    const gps = pos.gps;
+    if (gps && gps.lat !== null && gps.lon !== null) {
+        const gpsLatLng = [gps.lat, gps.lon];
+        if (!aircraftMarker) {
+            aircraftMarker = L.circleMarker(gpsLatLng, {
+                color: '#b45309',
+                fillColor: '#f59e0b',
+                fillOpacity: 0.85,
+                radius: 6,
+                weight: 2,
+            }).addTo(map)
+              .bindTooltip('Aircraft GPS (GPS_RAW_INT)', { sticky: false });
+        } else {
+            aircraftMarker.setLatLng(gpsLatLng);
+        }
+    }
+}
+
+// ── Status fetch ─────────────────────────────────────────
+async function fetchStatus() {
+    try {
+        const resp = await fetch(CFG.statusUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        state.lastStatus = data;
+        updateStatusUI(data);
+        if (data.position) updateMap(data.position);
+    } catch (e) {
+        console.warn('Status fetch error:', e);
+        setProcessStatus(null, null);
+    }
+}
+
+// ── Status UI update ─────────────────────────────────────
+function setProcessStatus(running, pid) {
+    const dot = document.getElementById('statusDot');
+    const proc = document.getElementById('procStatus');
+    const pidEl = document.getElementById('procPid');
+
+    if (running === null) {
+        dot.className = 'status-dot';
+        proc.textContent = 'Unknown';
+        proc.className = 'stat-value val-muted';
+        pidEl.textContent = '--';
+        return;
+    }
+    dot.className = 'status-dot' + (running ? ' active' : '');
+    proc.textContent = running ? 'Running' : 'Stopped';
+    proc.className = 'stat-value ' + (running ? 'val-ok' : 'val-error');
+    pidEl.textContent = pid ? `PID ${pid}` : '--';
+}
+
+function fmtCoord(v) {
+    return (v !== null && v !== undefined) ? v.toFixed(6) : '--';
+}
+function fmtAlt(v) {
+    return (v !== null && v !== undefined) ? `${v.toFixed(1)} m` : '--';
+}
+function fmtDeg(v) {
+    return (v !== null && v !== undefined) ? `${v.toFixed(1)}°` : '--';
+}
+function fmtM(v, digits) {
+    return (v !== null && v !== undefined) ? `${v.toFixed(digits ?? 2)} m` : '--';
+}
+function setText(id, text, cls) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    if (cls !== undefined) el.className = 'stat-value ' + cls;
+}
+
+function updateStatusUI(data) {
+    setProcessStatus(data.process_running, data.pid);
+
+    // Data freshness
+    const ageEl = document.getElementById('dataAge');
+    if (data.data_age_seconds !== null && data.data_age_seconds !== undefined) {
+        ageEl.textContent = `${data.data_age_seconds}s ago`;
+        ageEl.className = 'stat-value ' + (data.data_age_seconds > 5 ? 'val-warn' : 'val-ok');
+    } else {
+        ageEl.textContent = '--';
+        ageEl.className = 'stat-value val-muted';
+    }
+
+    const p = data.position;
+    if (!p) return;
+
+    // Config info
+    setText('dishAddr', p.dish_address || '--', 'val-muted');
+    setText('mavConn',  p.mavlink_connection || '--', 'val-muted');
+
+    // Starlink position
+    const sl = p.starlink || {};
+    setText('starLat', fmtCoord(sl.lat));
+    setText('starLon', fmtCoord(sl.lon));
+    setText('starAlt', fmtAlt(sl.alt));
+    setText('starUnc1',  fmtM(sl.uncertainty_1sigma, 2));
+
+    // Colour uncertainty vs limit
+    const unc99 = sl.uncertainty_99;
+    const uncLimit = p.uncertainty_limit || 20;
+    setText('starUnc99', fmtM(unc99, 2),
+        unc99 === null ? 'val-muted' : (unc99 < uncLimit ? 'val-ok' : 'val-warn'));
+
+    // Stable time
+    const stableEl = document.getElementById('stableTime');
+    if (p.stable_seconds !== null && p.stable_seconds !== undefined) {
+        stableEl.textContent = `${p.stable_seconds.toFixed(1)} s / ${p.min_stable_time} s`;
+        stableEl.className = 'stat-value ' +
+            (p.stable_seconds >= p.min_stable_time ? 'val-ok' : 'val-warn');
+    } else {
+        stableEl.textContent = `-- / ${p.min_stable_time ?? '--'} s`;
+        stableEl.className = 'stat-value val-muted';
+    }
+
+    // Sending status
+    const sending = !!p.sending;
+    const badge = document.getElementById('sendingBadge');
+    if (sending) {
+        badge.textContent = 'SENDING';
+        badge.className = 'badge badge-sending';
+        badge.style.display = '';
+    } else {
+        badge.style.display = 'none';
+    }
+    setText('sendingStatus', sending ? 'Yes' : 'No', sending ? 'val-send' : 'val-muted');
+
+    // Correction flag
+    const corr = p.correction || 'N';
+    setText('correction', corr, corr === 'Y' ? 'val-send' : 'val-muted');
+
+    // Aircraft GPS
+    const gps = p.gps || {};
+    setText('gpsLat', fmtCoord(gps.lat));
+    setText('gpsLon', fmtCoord(gps.lon));
+    setText('gpsAlt', fmtAlt(gps.alt));
+
+    // Aircraft EKF
+    const ekf = p.ekf || {};
+    setText('ekfLat', fmtCoord(ekf.lat));
+    setText('ekfLon', fmtCoord(ekf.lon));
+    setText('ekfAlt', fmtAlt(ekf.alt));
+
+    // Attitude
+    const att = p.attitude || {};
+    setText('roll',  fmtDeg(att.roll));
+    setText('pitch', fmtDeg(att.pitch));
+    setText('yaw',   fmtDeg(att.yaw));
+
+    // 3D accuracy
+    setText('accuracy3d', fmtM(p.accuracy_3d, 2));
+}
+
+// ── Log streaming (SSE) ──────────────────────────────────
+function connectLogStream() {
+    if (state.eventSource) {
+        state.eventSource.close();
+        state.eventSource = null;
+    }
+
+    const es = new EventSource(CFG.logsUrl);
+    state.eventSource = es;
+
+    es.onmessage = (evt) => {
+        try { appendLog(JSON.parse(evt.data)); } catch (_) {}
+    };
+
+    es.addEventListener('connected', () => {
+        appendLog({ level: 'sys', source: 'system', message: 'Log stream connected' });
+    });
+
+    es.addEventListener('history_start', () => {
+        appendLog({ level: 'sys', source: 'system', message: '── Recent log history ──' });
+    });
+
+    es.addEventListener('history_end', () => {
+        appendLog({ level: 'sys', source: 'system', message: '── Live stream ──' });
+    });
+
+    es.onerror = () => {
+        appendLog({ level: 'warn', source: 'system', message: 'Log stream disconnected — reconnecting in 3s…' });
+        es.close();
+        state.eventSource = null;
+        setTimeout(connectLogStream, 3000);
+    };
+}
+
+function appendLog(entry) {
+    if (state.logsPaused) return;
+
+    const logEl = document.getElementById('logOutput');
+    const atBottom = logEl.scrollHeight - logEl.clientHeight - logEl.scrollTop < 30;
+
+    const line = document.createElement('div');
+    line.className = `log-line log-${entry.level || 'info'}`;
+
+    const ts = entry.timestamp
+        ? entry.timestamp.replace('T', ' ').substring(0, 23)
+        : new Date().toTimeString().substring(0, 8);
+    const src = entry.source ? `[${entry.source}] ` : '';
+    line.textContent = `${ts}  ${src}${entry.message}`;
+
+    logEl.appendChild(line);
+
+    // Trim old lines
+    while (logEl.children.length > CFG.maxLogLines) {
+        logEl.removeChild(logEl.firstChild);
+    }
+
+    // Auto-scroll only if already at bottom
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+}
+
+function togglePause() {
+    state.logsPaused = !state.logsPaused;
+    const btn = document.getElementById('pauseBtn');
+    btn.textContent = state.logsPaused ? 'Resume' : 'Pause';
+    btn.className = state.logsPaused ? 'btn btn-warn' : 'btn btn-secondary';
+    if (!state.logsPaused) {
+        // Scroll to bottom when resuming
+        const logEl = document.getElementById('logOutput');
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+}
+
+function clearLogs() {
+    document.getElementById('logOutput').innerHTML = '';
+}
+
+// ── Command execution ────────────────────────────────────
+async function executeCommand(action) {
+    const btnId = `btn-${action}`;
+    const btn = document.getElementById(btnId);
+    const labels = { start: 'Starting…', stop: 'Stopping…', restart: 'Restarting…' };
+    const orig   = { start: 'Start', stop: 'Stop', restart: 'Restart' };
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = labels[action] || action;
+    }
+
+    try {
+        const resp = await fetch(CFG.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action }),
+        });
+        const data = await resp.json();
+
+        appendLog({
+            level: data.success ? 'info' : 'error',
+            source: 'webui',
+            message: `Command '${action}' ${data.success ? 'OK' : 'FAILED: ' + (data.error || data.output || '')}`,
+        });
+
+        // Refresh status after a short delay
+        setTimeout(fetchStatus, 1200);
+    } catch (e) {
+        appendLog({ level: 'error', source: 'webui', message: `Command '${action}' failed: ${e.message}` });
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = orig[action] || action;
+        }
+    }
+}
+
+// ── Bootstrap ────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+    fetchStatus();
+    setInterval(fetchStatus, CFG.statusInterval);
+    connectLogStream();
+});
+</script>
+</body>
+</html>
