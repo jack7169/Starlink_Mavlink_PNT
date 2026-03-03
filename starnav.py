@@ -159,19 +159,19 @@ def send_fake_gps(lat, lon, alt):
     mav.mav.gps_input_send(
         int(time.time() * 1e6),  # time_usec
         1,                        # gps_id  (GPS2 = index 1)
-        56,                       # ignore_flags
+        248,                       # ignore_flags
         ms_in_week,               # time_week_ms
         week,                     # time_week
         3,                        # fix_type  (3 = 3D fix)
         int(lat * 1e7),           # lat  degE7
         int(lon * 1e7),           # lon  degE7
         float(alt),               # alt  metres MSL
-        6.9,                      # hdop
-        6.9,                      # vdop
+        1.1,                      # hdop
+        1.1,                      # vdop
         0.0, 0.0, 0.0,            # vn, ve, vd  (ignored)
         0.0,                      # speed_accuracy (ignored)
-        6.9,                      # horiz_accuracy  m
-        9.0,                      # vert_accuracy   m
+        0.0,                      # horiz_accuracy  m
+        0.0,                      # vert_accuracy   m
         20,                       # satellites_visible
         0,                        # yaw  (0 = not set)
     )
