@@ -369,6 +369,10 @@
                     <span class="stat-label">Correction flag</span>
                     <span id="correction" class="stat-value val-muted">--</span>
                 </div>
+                <div class="stat-row">
+                    <span class="stat-label">Accepted by EKF</span>
+                    <span id="ekfAccepted" class="stat-value val-muted">--</span>
+                </div>
             </div>
 
             <!-- Aircraft Data (from MAVLink) -->
@@ -749,6 +753,16 @@ function updateStatusUI(data) {
     // Correction flag
     const corr = p.correction || 'N';
     setText('correction', corr, corr === 'Y' ? 'val-send' : 'val-muted');
+
+    // EKF acceptance (last ACK result)
+    const ack = p.last_ack_result;
+    if (ack === null || ack === undefined) {
+        setText('ekfAccepted', '--', 'val-muted');
+    } else if (ack === 0) {
+        setText('ekfAccepted', 'Yes', 'val-ok');
+    } else {
+        setText('ekfAccepted', `No (result: ${ack})`, 'val-error');
+    }
 
     // Aircraft GPS
     const gps = p.gps || {};

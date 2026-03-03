@@ -185,6 +185,7 @@ def write_status_file(data):
         "sending":        data["sending"],
         "correction":     data["correction"],
         "stable_seconds": sf(data["stable_secs"], 1),
+        "last_ack_result": data["last_ack_result"],
     }
     try:
         tmp = STATUS_FILE + ".tmp"
@@ -315,6 +316,7 @@ try:
     accuracy = float("nan")
     correction = "N"
     timestamp = datetime.now(UTC)
+    last_ack_result = None   # None = never sent; 0 = accepted; other = rejected
 
     while True:
         try:
@@ -446,6 +448,7 @@ try:
             ack = wait_for_ack(mav, 43003, timeout=1.0)
 
             if ack:
+                last_ack_result = ack.result
                 print(
                     f"ACK Received | "
                     f"Command: {ack.command} | "
@@ -473,6 +476,7 @@ try:
             "sending":        (correction == "Y" or stable_long_enough),
             "correction":     correction,
             "stable_secs":    _stable_secs,
+            "last_ack_result": last_ack_result,
         })
 
         time.sleep(0.2)
