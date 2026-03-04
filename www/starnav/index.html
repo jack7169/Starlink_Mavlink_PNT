@@ -277,6 +277,23 @@
         ::-webkit-scrollbar       { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+        /* ── Version footer ──────────────────────────── */
+        .version-footer {
+            text-align: center;
+            padding: 0.5rem 1rem;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 0.25rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .version-footer .update-badge {
+            margin-left: 0.6rem;
+            color: var(--warning);
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -473,6 +490,12 @@
 
 </div><!-- /container -->
 
+<!-- ── Version footer ────────────────────────────────── -->
+<div class="version-footer">
+    <span id="versionCommit">commit --</span>
+    <span id="updateBadge" class="update-badge" style="display:none" title="">⚠ Update available — run install.sh</span>
+</div>
+
 <!-- ── Leaflet ────────────────────────────────────────── -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -484,6 +507,7 @@ const CFG = {
     statusUrl:      'cgi-bin/status.cgi',
     logsUrl:        'cgi-bin/logs.cgi',
     apiUrl:         'cgi-bin/api.cgi',
+    versionUrl:     'cgi-bin/version.cgi',
     statusInterval: 2000,
     maxLogLines:    500,
 };
@@ -956,12 +980,31 @@ async function executeCommand(action) {
     }
 }
 
+// ── Version footer ───────────────────────────────────────
+async function fetchVersion() {
+    try {
+        const resp = await fetch(CFG.versionUrl);
+        if (!resp.ok) return;
+        const d = await resp.json();
+        document.getElementById('versionCommit').textContent = `commit ${d.commit}`;
+        const badge = document.getElementById('updateBadge');
+        if (d.update_available) {
+            badge.title = d.remote_commit ? `Latest: ${d.remote_commit}` : '';
+            badge.style.display = '';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (_) {}
+}
+
 // ── Bootstrap ────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
     fetchStatus();
     setInterval(fetchStatus, CFG.statusInterval);
     connectLogStream();
+    fetchVersion();
+    setInterval(fetchVersion, 300000); // re-check every 5 minutes
 });
 </script>
 </body>

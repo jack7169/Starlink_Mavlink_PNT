@@ -1,6 +1,7 @@
 #!/bin/sh
-# install.sh - Install StarNav on OpenWRT
-# Usage: scp this project directory to the router, then run this script from within it.
+# install.sh - Install or update StarNav on OpenWRT
+# Usage (first install): scp -O install.sh root@<router>:/tmp/ && ssh root@<router> 'sh /tmp/install.sh'
+# Usage (update):        ssh root@<router> '/opt/starnav/install.sh'
 # Safe to re-run (idempotent).
 
 set -e
@@ -8,16 +9,15 @@ set -e
 INSTALL_DIR="/opt/starnav"
 CONFIG_FILE="/etc/starnav.conf"
 INIT_SCRIPT="/etc/init.d/starnav"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_URL="https://github.com/jack7169/Starlink_Mavlink_PNT.git"
 
 echo "=== StarNav OpenWRT Installer ==="
-echo "Installing from: $SCRIPT_DIR"
 echo ""
 
 # ---- Section 1: System packages ----
 echo "=== Installing system packages ==="
 opkg update
-opkg install python3 || true
+opkg install git git-http python3 || true
 opkg install ntpd || opkg install sntpd || true
 echo "NTP client installed (no RTC on this board -- NTP required for wall-clock time)."
 
@@ -56,38 +56,42 @@ python3 -m pip install --no-cache-dir \
 echo "Verifying Python dependencies..."
 python3 -c "import grpc; import google.protobuf; import yagrc; from pymavlink import mavutil; print('All dependencies OK')"
 
-# ---- Section 3: Project files ----
+# ---- Section 3: Clone or update repo ----
 echo ""
 echo "=== Installing project files ==="
-mkdir -p "$INSTALL_DIR"
-mkdir -p "${INSTALL_DIR}/starlink-grpc-tools"
 
-# Copy main files
-cp "${SCRIPT_DIR}/starnav.py" "$INSTALL_DIR/"
-cp "${SCRIPT_DIR}/starnav.sh" "$INSTALL_DIR/"
+if [ -d "${INSTALL_DIR}/.git" ]; then
+    echo "Existing installation found — pulling latest from GitHub..."
+    git -C "$INSTALL_DIR" pull --recurse-submodules
+    git -C "$INSTALL_DIR" submodule update --init --recursive
+    echo "Update complete."
+else
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "Removing non-git remnants at $INSTALL_DIR..."
+        rm -rf "$INSTALL_DIR"
+    fi
+    echo "Cloning repo to $INSTALL_DIR..."
+    git clone --recurse-submodules "$REPO_URL" "$INSTALL_DIR"
+    echo "Clone complete."
+fi
+
 chmod +x "${INSTALL_DIR}/starnav.sh"
-
-# Copy only the starlink-grpc-tools files we actually need
-cp "${SCRIPT_DIR}/starlink-grpc-tools/starlink_grpc.py" "${INSTALL_DIR}/starlink-grpc-tools/"
-cp "${SCRIPT_DIR}/starlink-grpc-tools/dish_control.py" "${INSTALL_DIR}/starlink-grpc-tools/"
-cp "${SCRIPT_DIR}/starlink-grpc-tools/loop_util.py" "${INSTALL_DIR}/starlink-grpc-tools/"
+chmod +x "${INSTALL_DIR}/www/starnav/cgi-bin/"*.cgi
 
 # ---- Section 4: Configuration ----
 echo ""
 echo "=== Installing configuration ==="
 if [ -f "$CONFIG_FILE" ]; then
     echo "Config already exists at $CONFIG_FILE -- preserving."
-    cp "${SCRIPT_DIR}/starnav.conf" "${CONFIG_FILE}.new"
+    cp "${INSTALL_DIR}/starnav.conf" "${CONFIG_FILE}.new"
     echo "New defaults saved to ${CONFIG_FILE}.new for reference."
 else
-    cp "${SCRIPT_DIR}/starnav.conf" "$CONFIG_FILE"
+    cp "${INSTALL_DIR}/starnav.conf" "$CONFIG_FILE"
     echo "Config installed to $CONFIG_FILE"
 fi
 
-# Create CSV log directory from config (read whichever config will actually be used)
-ACTIVE_CONFIG="$CONFIG_FILE"
-[ -f "$CONFIG_FILE" ] || ACTIVE_CONFIG="${SCRIPT_DIR}/starnav.conf"
-CSV_DIR=$(awk -F '=' '/^\[logging\]/{in_s=1} in_s && /^csv_dir/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' "$ACTIVE_CONFIG")
+# Create CSV log directory from config
+CSV_DIR=$(awk -F '=' '/^\[logging\]/{in_s=1} in_s && /^csv_dir/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' "$CONFIG_FILE")
 CSV_DIR="${CSV_DIR:-/root/starlink_logs}"
 mkdir -p "$CSV_DIR"
 echo "Log directory: $CSV_DIR"
@@ -95,33 +99,18 @@ echo "Log directory: $CSV_DIR"
 # ---- Section 5: Init script ----
 echo ""
 echo "=== Installing init script ==="
-cp "${SCRIPT_DIR}/starnav.init" "$INIT_SCRIPT"
+cp "${INSTALL_DIR}/starnav.init" "$INIT_SCRIPT"
 chmod +x "$INIT_SCRIPT"
 "$INIT_SCRIPT" enable
 echo "Service enabled for auto-start on boot."
 
-# ---- Section 6: Web UI files ----
-echo ""
-echo "=== Installing web UI ==="
-WEB_DIR="/www/starnav"
-mkdir -p "${WEB_DIR}/cgi-bin"
-
-cp "${SCRIPT_DIR}/www/starnav/index.html" "${WEB_DIR}/"
-cp "${SCRIPT_DIR}/www/starnav/cgi-bin/status.cgi" "${WEB_DIR}/cgi-bin/"
-cp "${SCRIPT_DIR}/www/starnav/cgi-bin/logs.cgi"   "${WEB_DIR}/cgi-bin/"
-cp "${SCRIPT_DIR}/www/starnav/cgi-bin/api.cgi"    "${WEB_DIR}/cgi-bin/"
-chmod +x "${WEB_DIR}/cgi-bin/"*.cgi
-
-echo "Web UI files installed to $WEB_DIR"
-
-# ---- Section 7: Dedicated uhttpd instance on port 8081 ----
+# ---- Section 6: Dedicated uhttpd instance on port 8081 ----
 echo ""
 echo "=== Configuring dedicated web server (port 8081) ==="
 
-# Add/update a separate uhttpd UCI config block named 'starnav'.
-# This runs alongside the existing uhttpd instance and owns only port 8081.
+# Serve web UI directly from the git repo — no separate copy needed.
 uci set uhttpd.starnav=uhttpd
-uci set uhttpd.starnav.home='/www/starnav'
+uci set "uhttpd.starnav.home=${INSTALL_DIR}/www/starnav"
 uci set uhttpd.starnav.cgi_prefix='/cgi-bin'
 uci set uhttpd.starnav.script_timeout='60'
 uci set uhttpd.starnav.network_timeout='30'
@@ -140,13 +129,14 @@ echo "uhttpd restarted — StarNav UI now on port 8081."
 echo ""
 echo "=== Installation complete ==="
 echo ""
-echo "  Config file:  $CONFIG_FILE"
-echo "  Install dir:  $INSTALL_DIR"
-echo "  Init script:  $INIT_SCRIPT"
-echo "  Web UI:       http://<router-ip>:8081/"
+echo "  Repo / install: $INSTALL_DIR"
+echo "  Config file:    $CONFIG_FILE"
+echo "  Init script:    $INIT_SCRIPT"
+echo "  Web UI:         http://<router-ip>:8081/"
 echo ""
 echo "  1. Edit $CONFIG_FILE to set your MAVLink endpoint"
 echo "  2. Start:   /etc/init.d/starnav start"
 echo "  3. Web UI:  http://<router-ip>:8081/"
 echo "  4. Logs:    logread -e starnav"
 echo "  5. Stop:    /etc/init.d/starnav stop"
+echo "  6. Update:  $INSTALL_DIR/install.sh"
