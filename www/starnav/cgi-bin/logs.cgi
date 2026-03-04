@@ -1,11 +1,14 @@
 #!/bin/sh
 #
 # StarNav Web UI - Log Streaming API (Server-Sent Events)
-# Streams starnav process logs in real-time via a direct pipeline.
+# Streams starnav process logs in real-time via a foreground pipeline.
 #
 
 # SSE headers
 printf 'Content-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nX-Accel-Buffering: no\r\n\r\n'
+
+# Tell the browser to reconnect after 3 s if the stream ends
+printf 'retry: 3000\n\n'
 
 # Helper: escape string for JSON
 json_escape() {
@@ -49,19 +52,10 @@ done
 send_event "history_end" "{\"message\":\"Log history complete\"}"
 
 # ── Live stream ──────────────────────────────────────────
-# Direct pipeline: logread -f -> grep -> send_log.
-# No FIFO or background processes — output goes straight to the SSE response.
-# The browser EventSource reconnects automatically if the connection drops.
-cleanup() { kill "$TAIL_PID" 2>/dev/null; exit 0; }
-trap cleanup EXIT INT TERM
-
+# Pure foreground pipeline — no background processes, no FIFO.
+# Every printf goes directly to the CGI stdout pipe without buffering.
+# starnav logs at ~5 Hz so no heartbeat is needed while it runs;
+# the retry directive above handles reconnect when it's stopped.
 logread -f 2>/dev/null | grep --line-buffered -i starnav | while IFS= read -r line; do
-    [ -n "$line" ] && send_log "$line" "starnav" || true
-done &
-TAIL_PID=$!
-
-# Heartbeat loop — keeps the TCP connection alive during quiet periods
-while kill -0 "$TAIL_PID" 2>/dev/null; do
-    printf ': heartbeat\n\n'
-    sleep 15
+    [ -n "$line" ] && send_log "$line" "starnav"
 done
