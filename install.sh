@@ -84,6 +84,14 @@ else
     echo "Config installed to $CONFIG_FILE"
 fi
 
+# Create CSV log directory from config (read whichever config will actually be used)
+ACTIVE_CONFIG="$CONFIG_FILE"
+[ -f "$CONFIG_FILE" ] || ACTIVE_CONFIG="${SCRIPT_DIR}/starnav.conf"
+CSV_DIR=$(awk -F '=' '/^\[logging\]/{in_s=1} in_s && /^csv_dir/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' "$ACTIVE_CONFIG")
+CSV_DIR="${CSV_DIR:-/root/starlink_logs}"
+mkdir -p "$CSV_DIR"
+echo "Log directory: $CSV_DIR"
+
 # ---- Section 5: Init script ----
 echo ""
 echo "=== Installing init script ==="
